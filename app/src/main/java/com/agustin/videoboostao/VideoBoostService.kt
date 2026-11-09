@@ -230,7 +230,9 @@ class VideoBoostService : AccessibilityService() {
             return
         }
 
-        val mode = activeBoostMode(root)
+        // Con el panel abierto por nosotros, el selector de modos puede quedar
+        // tapado: seguir con el modo ya detectado en vez de perder el hilo.
+        val mode = activeBoostMode(root) ?: if (panelOpenedByUs) currentMode else null
         if (mode == null) {
             // Modo foto/retrato: no actuar ni reintentar. El próximo evento
             // de la cámara (p. ej. cambio a modo video) re-dispara el chequeo.
@@ -243,6 +245,14 @@ class VideoBoostService : AccessibilityService() {
         }
         currentMode = mode
         attempts++
+
+        // Atajo (Magic Capture): el indicador de la barra superior ya dice
+        // "Video Boost on" → no hace falta abrir el panel.
+        if (mode == MODE_MAGIC_CAPTURE && isBoostIndicatorOn(root)) {
+            Log.i(TAG, "Video Boost ya estaba activo (indicador) en Magic Capture")
+            finishSession()
+            return
+        }
 
         // Caso 1: la fila "Video Boost" ya está a la vista (panel abierto).
         val onButton = findVideoBoostOnButton(root)
@@ -343,6 +353,9 @@ class VideoBoostService : AccessibilityService() {
      * Magic Capture), o null en cualquier otro (Foto, Retrato, Noche...).
      */
     private fun activeBoostMode(root: AccessibilityNodeInfo): String? {
+        // Pixel 11+: Magic Capture es un "supermodo" y no hay carrusel de chips.
+        if (isMagicCaptureSupermodeChecked(root)) return MODE_MAGIC_CAPTURE
+
         val chips = root.findAccessibilityNodeInfosByViewId(Selectors.MODE_CHIP_TEXT_ID) ?: return null
         val selected = chips.filter { it.isSelected }
         if (selected.isEmpty()) return null
@@ -352,6 +365,48 @@ class VideoBoostService : AccessibilityService() {
             selected.any { chipMatches(it, CameraLabels.magicCaptureModeLabels(lang)) } -> MODE_MAGIC_CAPTURE
             else -> null
         }
+    }
+
+    /** El supermodo Magic Capture está marcado en el selector de supermodos. */
+    private fun isMagicCaptureSupermodeChecked(root: AccessibilityNodeInfo): Boolean {
+        val frame = root.findAccessibilityNodeInfosByViewId(Selectors.SUPERMODE_SWITCHER_FRAME_ID)
+            ?.firstOrNull() ?: return false
+        val labels = CameraLabels.magicCaptureModeLabels(systemLanguage())
+        return findNode(frame, depth = 0) { node ->
+            node.isCheckable && node.isChecked && (
+                node.viewIdResourceName in Selectors.MAGIC_CAPTURE_SUPERMODE_TAGS ||
+                    chipMatches(node, labels) ||
+                    (0 until node.childCount).any { i ->
+                        node.getChild(i)?.let { chipMatches(it, labels) } == true
+                    }
+                )
+        } != null
+    }
+
+    /** La barra superior muestra el indicador "Video Boost on". */
+    private fun isBoostIndicatorOn(root: AccessibilityNodeInfo): Boolean {
+        val minibar = root.findAccessibilityNodeInfosByViewId(Selectors.MINIBAR_ID)
+            ?.firstOrNull() ?: return false
+        val descs = CameraLabels.videoBoostOnDescs(systemLanguage())
+        return findNode(minibar, depth = 0) { node ->
+            node.isVisibleToUser && descs.any { d ->
+                node.contentDescription?.toString()?.equals(d, ignoreCase = true) == true
+            }
+        } != null
+    }
+
+    private fun findNode(
+        node: AccessibilityNodeInfo,
+        depth: Int,
+        predicate: (AccessibilityNodeInfo) -> Boolean,
+    ): AccessibilityNodeInfo? {
+        if (predicate(node)) return node
+        if (depth >= 12) return null
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            findNode(child, depth + 1, predicate)?.let { return it }
+        }
+        return null
     }
 
     private fun chipMatches(chip: AccessibilityNodeInfo, labels: List<String>): Boolean =
