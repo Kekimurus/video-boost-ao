@@ -19,9 +19,9 @@ object Selectors {
     const val VIDEO_SETTINGS_ENTRY_ID = "$CAMERA_PACKAGE:id/options_entry_button"
 
     /**
-     * Chip del carrusel de modos ("Pan", "Blur", "Video", "Night Sight",
-     * "Slow Motion"). Se usa para confirmar que el modo activo es Video
-     * antes de tocar nada. Los textos localizados del chip y de la fila
+     * Chip del carrusel de modos ("Pan", "Blur", "Video", "Magic Capture",
+     * "Night Sight", "Slow Motion"). Se usa para confirmar que el modo
+     * activo es Video o Magic Capture antes de tocar nada. Los textos localizados del chip y de la fila
      * "Video Boost" viven en [CameraLabels] (extraídos de la APK real de
      * Pixel Camera, 74 idiomas).
      */

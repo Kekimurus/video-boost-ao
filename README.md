@@ -71,8 +71,8 @@ app avoids on purpose (see *Distribution notes*).
    Android 13+): tap **Open App info** in the app → ⋮ menu (top right) →
    **"Allow restricted settings"** (confirm with fingerprint/PIN) → retry
    step 2.
-4. Open Pixel Camera in video mode: within ~0.5 s Video Boost turns on by
-   itself (sparkle icon at the top left of the viewfinder). The app also has a
+4. Open Pixel Camera in video mode (or Magic Capture on Pixel 11+): within
+   ~0.5 s Video Boost turns on by itself (sparkle icon at the top left of the viewfinder). The app also has a
    **Try it now** button.
 
 The app includes a **master switch** to pause/resume the automation without
@@ -157,7 +157,8 @@ Granting an accessibility service is a big ask: Android's own dialog says
 complete, auditable answer, which the app also shows in **About, privacy &
 source code**:
 
-**What it does, exactly.** It watches for Pixel Camera in video mode. When it
+**What it does, exactly.** It watches for Pixel Camera in video mode (or Magic
+Capture on Pixel 11+, a mode it checks separately). When it
 appears, it opens the Video Settings panel, reads the real state of the Video
 Boost toggle, turns it on only if it is off, and closes the panel, all in
 about half a second. That is all. It only reads and taps controls inside Pixel Camera;

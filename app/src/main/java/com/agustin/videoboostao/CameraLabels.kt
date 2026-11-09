@@ -5,6 +5,9 @@ package com.agustin.videoboostao
  * base.apk del dispositivo (v10.4.117) con `aapt2 dump resources`:
  * - string/sapphire_label  -> fila "Video Boost" del panel de ajustes
  * - string/mode_video      -> chip "Video" del carrusel de modos
+ * - MAGIC_CAPTURE_MODE_BY_LANG: chip "Magic Capture" (Pixel 11+). Por ahora
+ *   solo el nombre en ingles (Google suele dejar la marca sin traducir);
+ *   gen-labels.ps1 lo completa si encuentra la cadena en la APK.
  * NO editar a mano: regenerar con scratchpad/gen-labels.ps1 tras cada
  * Feature Drop que cambie las cadenas.
  *
@@ -245,6 +248,10 @@ object CameraLabels {
         "zu" to listOf("I-Video Boost ivaliwe"),
     )
 
+    val MAGIC_CAPTURE_MODE_BY_LANG: Map<String, List<String>> = mapOf(
+        "en" to listOf("Magic Capture"),
+    )
+
     /** Alias de codigos modernos -> legacy usados por Locale.getLanguage(). */
     private val LANG_ALIASES = mapOf("id" to "in", "he" to "iw", "fil" to "tl", "no" to "nb")
 
@@ -261,6 +268,13 @@ object CameraLabels {
     fun videoModeLabels(lang: String): List<String> {
         val own = VIDEO_MODE_BY_LANG[normalize(lang)] ?: emptyList()
         val en = VIDEO_MODE_BY_LANG.getValue("en")
+        return (own + en).distinct()
+    }
+
+    /** Candidatos para el chip de modo Magic Capture: idioma del sistema + fallback en ingles. */
+    fun magicCaptureModeLabels(lang: String): List<String> {
+        val own = MAGIC_CAPTURE_MODE_BY_LANG[normalize(lang)] ?: emptyList()
+        val en = MAGIC_CAPTURE_MODE_BY_LANG.getValue("en")
         return (own + en).distinct()
     }
 

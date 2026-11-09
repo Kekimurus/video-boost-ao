@@ -2,11 +2,11 @@
 <resources>
     <string name="app_name">Video Boost AO</string>
     <string name="service_label">Video Boost Always-On</string>
-    <string name="service_desc">Automatically re-enables Video Boost every time Pixel Camera opens in video mode. It only reads and taps controls inside Pixel Camera, nothing else.</string>
+    <string name="service_desc">Automatically re-enables Video Boost every time Pixel Camera opens in video or Magic Capture mode. It only reads and taps controls inside Pixel Camera, nothing else.</string>
 
     <!-- Estado hero -->
     <string name="status_active_title">Always-on</string>
-    <string name="status_active_body">Video Boost will turn on by itself every time you open the Camera in video mode.</string>
+    <string name="status_active_body">Video Boost will turn on by itself every time you open the Camera in video or Magic Capture mode.</string>
     <string name="status_paused_title">Paused</string>
     <string name="status_paused_body">The service is ready, but automation is paused. Flip the switch to resume.</string>
     <string name="status_setup_title">Setup needed</string>
@@ -243,7 +243,7 @@
     <string name="nav_about_title">About, privacy &amp; source code</string>
     <string name="nav_about_sub">What it does exactly, every permission explained</string>
     <string name="about_what_title">What this app does, exactly</string>
-    <string name="about_what_body">It watches for Pixel Camera in video mode. When it appears, it opens the Video Settings panel, reads the real state of the Video Boost toggle, turns it on only if it is off, and closes the panel, all in about half a second. That is all. It only reads and taps controls inside Pixel Camera; events from other apps are used solely to notice that the Camera left the screen or that a sensitive app opened, and are discarded on the spot.</string>
+    <string name="about_what_body">It watches for Pixel Camera in video or Magic Capture mode. When it appears, it opens the Video Settings panel, reads the real state of the Video Boost toggle, turns it on only if it is off, and closes the panel, all in about half a second. That is all. It only reads and taps controls inside Pixel Camera; events from other apps are used solely to notice that the Camera left the screen or that a sensitive app opened, and are discarded on the spot.</string>
     <string name="about_never_title">What it never does</string>
     <string name="about_never_body">It never reads or stores what is on your screen, never collects data, and has no analytics, no ads and no accounts. Nothing leaves your phone: the only network use is checking GitHub for new versions (and, if you enable it, the wireless-ADB connection to your own phone over localhost).</string>
     <string name="about_open_title">Open source (MIT)</string>

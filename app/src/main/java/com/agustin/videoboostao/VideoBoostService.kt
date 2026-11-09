@@ -10,14 +10,15 @@ import android.view.accessibility.AccessibilityNodeInfo
 
 /**
  * Reactiva Video Boost cada vez que Pixel Camera pasa a primer plano en
- * modo video. Pixel Camera lo modela como un control segmentado de dos
+ * modo Video o Magic Capture (Pixel 11+), y al cambiar a uno de esos modos
+ * dentro de la misma sesión. Pixel Camera lo modela como un control segmentado de dos
  * ImageButton ("Video Boost off" / "Video Boost on"), no como un Switch:
  * no hay isChecked, el estado se lee con isSelected. El botón "on" es
  * siempre el de más a la derecha dentro de la fila (mismo patrón que
  * Flash, Resolución, FPS y HDR en el mismo panel), así que la detección
  * no depende del idioma del sistema.
  *
- * Secuencia: detectar cámara → confirmar modo video → si el panel de
+ * Secuencia: detectar cámara → confirmar modo (Video / Magic Capture) → si el panel de
  * ajustes está colapsado, abrirlo con el botón `options_entry_button` →
  * localizar la fila "Video Boost" → si el botón "on" no está ya
  * seleccionado, tocarlo → verificar → cerrar el panel.
@@ -44,6 +45,14 @@ class VideoBoostService : AccessibilityService() {
          *  de SystemUI con la cámara aún visible; resetear ahí re-dispara la
          *  activación en bucle. */
         private const val RESET_CONFIRM_MS = 600L
+
+        /** Cadencia del chequeo de modo una vez resuelta la sesión: detecta
+         *  que el usuario cambió a otro modo con Video Boost (p. ej. Video →
+         *  Magic Capture) sin leer el árbol en cada evento del visor. */
+        private const val MODE_CHECK_MS = 500L
+
+        private const val MODE_VIDEO = "video"
+        private const val MODE_MAGIC_CAPTURE = "magic_capture"
 
         /** Instancia viva del servicio, para que la UI pueda deshabilitarlo
          *  (una app solo puede apagar su propio servicio con `disableSelf`). */
@@ -75,9 +84,17 @@ class VideoBoostService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private val attemptRunnable = Runnable { attemptActivation() }
     private val resetCheckRunnable = Runnable { confirmCameraGone() }
+    private val modeCheckRunnable = Runnable { checkModeChange() }
 
-    /** Ya se activó (o verificó activo) en esta sesión de cámara. */
+    /** Ya se activó (o verificó activo, o se desistió) para el modo actual. */
     private var handledThisSession = false
+
+    /** Modos ya resueltos en esta sesión de cámara. Video Boost puede ser un
+     *  ajuste independiente por modo, así que cada uno se verifica una vez. */
+    private val handledModes = mutableSetOf<String>()
+
+    /** Modo sobre el que se está trabajando en la secuencia actual. */
+    private var currentMode: String? = null
 
     /** El panel de Video Settings lo abrimos nosotros (para cerrarlo después). */
     private var panelOpenedByUs = false
@@ -146,7 +163,14 @@ class VideoBoostService : AccessibilityService() {
         // Actividad de la cámara: cancelar cualquier reset pendiente.
         handler.removeCallbacks(resetCheckRunnable)
 
-        if (handledThisSession) return
+        if (handledThisSession) {
+            // Sesión resuelta para el modo actual: solo vigilar (con throttle)
+            // si el usuario pasa a otro modo con Video Boost.
+            if (!handler.hasCallbacks(modeCheckRunnable)) {
+                handler.postDelayed(modeCheckRunnable, MODE_CHECK_MS)
+            }
+            return
+        }
 
         // Throttle (no debounce): la ráfaga de eventos durante la carga del
         // visor no pospone el intento: el primero corre a los 150 ms del
@@ -164,8 +188,28 @@ class VideoBoostService : AccessibilityService() {
         resetSession()
     }
 
+    /** Re-arma la secuencia si la cámara pasó a un modo con Video Boost que
+     *  todavía no se verificó en esta sesión. */
+    private fun checkModeChange() {
+        val root = rootInActiveWindow ?: return
+        if (root.packageName?.toString() != Selectors.CAMERA_PACKAGE) return
+        val mode = activeBoostMode(root) ?: return
+        if (mode in handledModes) return
+        Log.d(TAG, "Cambio a modo $mode; verificando Video Boost")
+        handledThisSession = false
+        panelOpenedByUs = false
+        lastEntryClickMs = 0L
+        entryClicks = 0
+        attempts = 0
+        handler.removeCallbacks(attemptRunnable)
+        handler.postDelayed(attemptRunnable, ATTEMPT_DELAY_MS)
+    }
+
     private fun resetSession() {
         handledThisSession = false
+        handledModes.clear()
+        currentMode = null
+        handler.removeCallbacks(modeCheckRunnable)
         panelOpenedByUs = false
         lastEntryClickMs = 0L
         entryClicks = 0
@@ -176,8 +220,8 @@ class VideoBoostService : AccessibilityService() {
     private fun attemptActivation() {
         if (handledThisSession) return
         if (attempts >= MAX_ATTEMPTS) {
-            Log.w(TAG, "Agotados $MAX_ATTEMPTS intentos sin encontrar los nodos; desisto esta sesión")
-            handledThisSession = true
+            Log.w(TAG, "Agotados $MAX_ATTEMPTS intentos sin encontrar los nodos; desisto en este modo")
+            markModeHandled()
             return
         }
 
@@ -186,11 +230,18 @@ class VideoBoostService : AccessibilityService() {
             return
         }
 
-        if (!isInVideoMode(root)) {
+        val mode = activeBoostMode(root)
+        if (mode == null) {
             // Modo foto/retrato: no actuar ni reintentar. El próximo evento
             // de la cámara (p. ej. cambio a modo video) re-dispara el chequeo.
             return
         }
+        if (mode in handledModes) {
+            // Volvió a un modo ya verificado en esta sesión: nada que hacer.
+            handledThisSession = true
+            return
+        }
+        currentMode = mode
         attempts++
 
         // Caso 1: la fila "Video Boost" ya está a la vista (panel abierto).
@@ -211,8 +262,8 @@ class VideoBoostService : AccessibilityService() {
                 return
             }
             if (entryClicks >= MAX_ENTRY_CLICKS) {
-                Log.w(TAG, "El panel no expone Video Boost tras $entryClicks aperturas; desisto esta sesión")
-                handledThisSession = true
+                Log.w(TAG, "El panel no expone Video Boost tras $entryClicks aperturas; desisto en este modo")
+                markModeHandled()
                 return
             }
             Log.d(TAG, "Abriendo panel Video Settings (intento $attempts)")
@@ -265,8 +316,14 @@ class VideoBoostService : AccessibilityService() {
         finishSession()
     }
 
-    private fun finishSession() {
+    /** Da por resuelto el modo actual (activado, ya activo o desistido). */
+    private fun markModeHandled() {
         handledThisSession = true
+        currentMode?.let { handledModes.add(it) }
+    }
+
+    private fun finishSession() {
+        markModeHandled()
         handler.removeCallbacks(attemptRunnable)
         if (panelOpenedByUs) {
             // Dejar el visor limpio como lo encontró el usuario.
@@ -281,16 +338,27 @@ class VideoBoostService : AccessibilityService() {
     private fun systemLanguage(): String =
         resources.configuration.locales[0]?.language ?: "en"
 
-    private fun isInVideoMode(root: AccessibilityNodeInfo): Boolean {
-        val chips = root.findAccessibilityNodeInfosByViewId(Selectors.MODE_CHIP_TEXT_ID) ?: return false
-        val labels = CameraLabels.videoModeLabels(systemLanguage())
-        return chips.any { chip ->
-            chip.isSelected && labels.any { label ->
-                chip.text?.toString()?.equals(label, ignoreCase = true) == true ||
-                    chip.contentDescription?.toString()?.equals(label, ignoreCase = true) == true
-            }
+    /**
+     * Modo activo del carrusel si es uno donde aplica Video Boost (Video o
+     * Magic Capture), o null en cualquier otro (Foto, Retrato, Noche...).
+     */
+    private fun activeBoostMode(root: AccessibilityNodeInfo): String? {
+        val chips = root.findAccessibilityNodeInfosByViewId(Selectors.MODE_CHIP_TEXT_ID) ?: return null
+        val selected = chips.filter { it.isSelected }
+        if (selected.isEmpty()) return null
+        val lang = systemLanguage()
+        return when {
+            selected.any { chipMatches(it, CameraLabels.videoModeLabels(lang)) } -> MODE_VIDEO
+            selected.any { chipMatches(it, CameraLabels.magicCaptureModeLabels(lang)) } -> MODE_MAGIC_CAPTURE
+            else -> null
         }
     }
+
+    private fun chipMatches(chip: AccessibilityNodeInfo, labels: List<String>): Boolean =
+        labels.any { label ->
+            chip.text?.toString()?.equals(label, ignoreCase = true) == true ||
+                chip.contentDescription?.toString()?.equals(label, ignoreCase = true) == true
+        }
 
     /**
      * Encuentra el ImageButton "on" de la fila Video Boost.
@@ -360,6 +428,7 @@ class VideoBoostService : AccessibilityService() {
 
     override fun onInterrupt() {
         handler.removeCallbacks(attemptRunnable)
+        handler.removeCallbacks(modeCheckRunnable)
     }
 
     /** Nombre visible de una app instalada, o null si no se puede resolver. */
@@ -368,6 +437,8 @@ class VideoBoostService : AccessibilityService() {
     override fun onDestroy() {
         if (instance === this) instance = null
         handler.removeCallbacks(attemptRunnable)
+        handler.removeCallbacks(modeCheckRunnable)
+        handler.removeCallbacks(resetCheckRunnable)
         super.onDestroy()
     }
 }
